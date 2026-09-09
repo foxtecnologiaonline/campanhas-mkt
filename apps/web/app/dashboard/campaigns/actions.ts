@@ -10,6 +10,7 @@ export async function createCampaign(formData: FormData): Promise<void> {
 
   const name = String(formData.get("name") ?? "").trim();
   const templateId = String(formData.get("templateId") ?? "");
+  const segmentId = String(formData.get("segmentId") ?? "");
   const scheduledAt = String(formData.get("scheduledAt") ?? "");
   if (!name || !templateId || !scheduledAt) {
     throw new Error("nome, template e data de agendamento são obrigatórios");
@@ -20,13 +21,14 @@ export async function createCampaign(formData: FormData): Promise<void> {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // MVP: audiência é sempre "todo contato com opt-in no canal" — expand_campaign
-  // ainda não interpreta segments.definition (ver comentário na migration).
+  // Sem segmento selecionado, expand_campaign trata como "todo contato com
+  // opt-in no canal" (ver migration 20250101000004).
   const { error } = await supabase.from("campaigns").insert({
     organization_id: org.organizationId,
     name,
     channel: "whatsapp",
     template_id: templateId,
+    segment_id: segmentId || null,
     scheduled_at: new Date(scheduledAt).toISOString(),
     status: "scheduled",
     created_by: user?.id,

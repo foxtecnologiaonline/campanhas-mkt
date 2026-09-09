@@ -19,11 +19,20 @@ export async function addContact(formData: FormData): Promise<void> {
   const phone = String(formData.get("phone") ?? "").trim();
   if (!phone) throw new Error("telefone é obrigatório");
 
+  const tags = String(formData.get("tags") ?? "")
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
   const supabase = await getUserClient();
 
   const { data: contact, error: contactError } = await supabase
     .from("contacts")
-    .insert({ organization_id: org.organizationId, full_name: fullName || null })
+    .insert({
+      organization_id: org.organizationId,
+      full_name: fullName || null,
+      custom_fields: tags.length > 0 ? { tags } : {},
+    })
     .select("id")
     .single();
 
