@@ -1,5 +1,6 @@
 import { getUserClient } from "@/lib/supabase/server-client";
 import { addContact } from "./actions";
+import { CsvImportForm } from "./csv-import-form";
 
 interface ContactRow {
   id: string;
@@ -37,6 +38,9 @@ export default async function ContactsPage() {
         </label>
         <button type="submit">Adicionar</button>
       </form>
+
+      <h2>Importar via CSV</h2>
+      <CsvImportForm />
 
       <table>
         <thead>

@@ -61,7 +61,7 @@ export async function POST(request: Request): Promise<Response> {
 
   const events = whatsAppEvolutionProvider.parseWebhookPayload(payload);
   for (const event of events) {
-    await processInboundEvent(supabase, "whatsapp_evolution", connection.organization_id, event);
+    await processInboundEvent(supabase, whatsAppEvolutionProvider, connection, event);
   }
 
   return new Response("ok", { status: 200 });

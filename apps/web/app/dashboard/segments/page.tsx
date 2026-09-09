@@ -1,3 +1,4 @@
+import { getCurrentOrg } from "@/lib/org";
 import { getUserClient } from "@/lib/supabase/server-client";
 import { createSegment } from "./actions";
 
@@ -14,6 +15,7 @@ function describeDefinition(definition: SegmentRow["definition"]): string {
 }
 
 export default async function SegmentsPage() {
+  const org = await getCurrentOrg();
   const supabase = await getUserClient();
   const { data } = await supabase
     .from("segments")
@@ -22,6 +24,19 @@ export default async function SegmentsPage() {
     .returns<SegmentRow[]>();
 
   const segments = data ?? [];
+
+  const counts = org
+    ? await Promise.all(
+        segments.map(async (s) => {
+          const { data: count } = await supabase.rpc("count_segment_audience", {
+            p_organization_id: org.organizationId,
+            p_channel: "whatsapp",
+            p_segment_id: s.id,
+          });
+          return (count as number | null) ?? 0;
+        }),
+      )
+    : [];
 
   return (
     <section>
@@ -33,18 +48,20 @@ export default async function SegmentsPage() {
           <tr>
             <th>Nome</th>
             <th>Filtro</th>
+            <th>Audiência hoje</th>
           </tr>
         </thead>
         <tbody>
-          {segments.map((s) => (
+          {segments.map((s, i) => (
             <tr key={s.id}>
               <td>{s.name}</td>
               <td>{describeDefinition(s.definition)}</td>
+              <td>{counts[i]} contato(s)</td>
             </tr>
           ))}
           {segments.length === 0 ? (
             <tr>
-              <td colSpan={2}>Nenhum segmento ainda.</td>
+              <td colSpan={3}>Nenhum segmento ainda.</td>
             </tr>
           ) : null}
         </tbody>

@@ -1,4 +1,4 @@
-import type { InboundEvent } from "@campanhas-mkt/channel-providers";
+import type { ChannelCredentials, ChannelProvider, InboundEvent } from "@campanhas-mkt/channel-providers";
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
 
 type ServiceClient = ReturnType<typeof getServiceRoleClient>;
@@ -30,6 +30,15 @@ export async function resolveChannelConnection(
   return data as ResolvedConnection | null;
 }
 
+// Correspondência exata (após trim/lowercase), não substring — uma frase
+// comprida que só cite a palavra "parar" não deve descadastrar ninguém.
+const OPT_OUT_KEYWORDS = new Set(["sair", "parar", "cancelar", "stop", "descadastrar"]);
+
+function isOptOutMessage(text: string | undefined): boolean {
+  if (!text) return false;
+  return OPT_OUT_KEYWORDS.has(text.trim().toLowerCase());
+}
+
 /**
  * Deduplica por (provider, provider_event_id) — os dois providers reentregam
  * webhooks — e aplica o efeito (status de mensagem ou registro de mensagem
@@ -38,16 +47,16 @@ export async function resolveChannelConnection(
  */
 export async function processInboundEvent(
   supabase: ServiceClient,
-  provider: string,
-  organizationId: string,
+  channelProvider: ChannelProvider,
+  connection: ResolvedConnection,
   event: InboundEvent,
 ): Promise<void> {
   const { data: inserted } = await supabase
     .from("webhook_events")
     .insert({
-      provider,
+      provider: channelProvider.provider,
       provider_event_id: event.providerEventId,
-      organization_id: organizationId,
+      organization_id: connection.organization_id,
       payload: event.raw as object,
     })
     .select("id")
@@ -62,21 +71,23 @@ export async function processInboundEvent(
     await supabase
       .from("messages")
       .update({ status: event.status })
-      .eq("organization_id", organizationId)
+      .eq("organization_id", connection.organization_id)
       .eq("provider_message_id", event.providerMessageId);
     return;
   }
 
   if (event.type === "message" && event.contactExternalId) {
-    await recordInboundMessage(supabase, organizationId, event);
+    await recordInboundMessage(supabase, channelProvider, connection, event);
   }
 }
 
 async function recordInboundMessage(
   supabase: ServiceClient,
-  organizationId: string,
+  channelProvider: ChannelProvider,
+  connection: ResolvedConnection,
   event: InboundEvent,
 ): Promise<void> {
+  const organizationId = connection.organization_id;
   const externalId = event.contactExternalId as string;
 
   let { data: contactChannel } = await supabase
@@ -129,4 +140,46 @@ async function recordInboundMessage(
     status: "delivered",
     body: event.text,
   });
+
+  if (isOptOutMessage(event.text)) {
+    await handleOptOut(supabase, channelProvider, connection, contactChannel, externalId);
+  }
+}
+
+async function handleOptOut(
+  supabase: ServiceClient,
+  channelProvider: ChannelProvider,
+  connection: ResolvedConnection,
+  contactChannel: { id: string; contact_id: string },
+  externalId: string,
+): Promise<void> {
+  await supabase
+    .from("contact_channels")
+    .update({ opt_in: false, opt_out_at: new Date().toISOString() })
+    .eq("id", contactChannel.id);
+
+  await supabase.from("audit_log").insert({
+    organization_id: connection.organization_id,
+    actor_type: "system",
+    action: "opt_out_via_message",
+    payload: { contact_id: contactChannel.contact_id, channel: "whatsapp" },
+  });
+
+  // Confirmação de texto livre: estamos dentro da janela de sessão porque o
+  // contato acabou de mandar mensagem, então não esbarra na exigência de
+  // template da Cloud API fora da janela de 24h.
+  try {
+    const { data: credentials } = await supabase.rpc("get_channel_credentials", {
+      p_connection_id: connection.id,
+    });
+    if (!credentials) return;
+
+    await channelProvider.send(credentials as ChannelCredentials, {
+      to: externalId,
+      text: "Você foi removido(a) da nossa lista de envios. Se mudar de ideia, é só mandar mensagem de novo.",
+      idempotencyKey: `opt-out-confirmation:${connection.id}:${externalId}`,
+    });
+  } catch (error) {
+    console.error("falha ao enviar confirmação de opt-out", error);
+  }
 }
