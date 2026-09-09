@@ -52,3 +52,88 @@ export async function addContact(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard/contacts");
 }
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+}
+
+/**
+ * Parser propositalmente simples: uma linha = uma vírgula separando
+ * nome,telefone,tags (tags entre si separadas por ";" pra não colidir com a
+ * vírgula das colunas). Não lida com campos entre aspas contendo vírgula —
+ * suficiente pra uma planilha exportada só com essas três colunas, não pra
+ * CSV arbitrário.
+ */
+export async function importContactsCsv(_prev: ImportResult | null, formData: FormData): Promise<ImportResult> {
+  const org = await getCurrentOrg();
+  if (!org) throw new Error("sem organização");
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("selecione um arquivo CSV");
+  }
+
+  const text = await file.text();
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  // A primeira linha é sempre tratada como cabeçalho e descartada.
+  const dataLines = lines.slice(1);
+
+  const supabase = await getUserClient();
+  let imported = 0;
+  let skipped = 0;
+
+  for (const line of dataLines) {
+    const [fullNameRaw, phoneRaw, tagsRaw] = line.split(",");
+    const phone = (phoneRaw ?? "").trim();
+    if (!phone) {
+      skipped++;
+      continue;
+    }
+
+    const fullName = (fullNameRaw ?? "").trim();
+    const tags = (tagsRaw ?? "")
+      .split(";")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
+    const { data: contact, error: contactError } = await supabase
+      .from("contacts")
+      .insert({
+        organization_id: org.organizationId,
+        full_name: fullName || null,
+        custom_fields: tags.length > 0 ? { tags } : {},
+      })
+      .select("id")
+      .single();
+
+    if (contactError || !contact) {
+      skipped++;
+      continue;
+    }
+
+    const { error: channelError } = await supabase.from("contact_channels").insert({
+      organization_id: org.organizationId,
+      contact_id: contact.id,
+      channel: "whatsapp",
+      external_id: normalizePhone(phone),
+      opt_in: true,
+      opt_in_at: new Date().toISOString(),
+      opt_in_source: "importação CSV",
+    });
+
+    if (channelError) {
+      skipped++;
+      continue;
+    }
+
+    imported++;
+  }
+
+  revalidatePath("/dashboard/contacts");
+  return { imported, skipped };
+}

@@ -55,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
       console.warn(`webhook whatsapp cloud: nenhuma conexão para phone_number_id=${event.externalRef}`);
       continue;
     }
-    await processInboundEvent(supabase, "whatsapp_cloud", connection.organization_id, event);
+    await processInboundEvent(supabase, whatsAppCloudProvider, connection, event);
   }
 
   // A Meta espera 200 rápido; reentrega automaticamente em caso de erro/timeout.

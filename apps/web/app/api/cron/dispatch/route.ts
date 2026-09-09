@@ -7,7 +7,10 @@ import {
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
 
 const CAMPAIGNS_PER_TICK = 5;
-const RECIPIENTS_PER_TICK = 50;
+// Teto por campanha, não um lote global — assim uma campanha grande de um
+// tenant não monopoliza o tick e atrasa o envio de outra organização.
+const PER_CAMPAIGN_BATCH = 10;
+const MAX_SENDING_CAMPAIGNS_PER_TICK = 10;
 
 // Único ponto do worker que sabe quais providers existem — adicionar um
 // canal novo (Telegram, SMS...) é registrar aqui, o resto do pipeline não muda.
@@ -18,13 +21,22 @@ const PROVIDERS: Record<string, ChannelProvider> = {
 
 type ServiceClient = ReturnType<typeof getServiceRoleClient>;
 
-interface PendingRecipient {
+interface CampaignInfo {
+  channel: string;
+  template_id: string | null;
+  status: string;
+}
+
+interface RawRecipient {
   id: string;
   organization_id: string;
   campaign_id: string;
   contact_id: string;
   contact_channel_id: string;
-  campaigns: { channel: string; template_id: string | null; status: string };
+}
+
+interface PendingRecipient extends RawRecipient {
+  campaigns: CampaignInfo;
 }
 
 /**
@@ -69,22 +81,36 @@ async function runDispatchTick(request: Request): Promise<Response> {
     else summary.expanded++;
   }
 
-  const { data: recipients, error: recipientsError } = await supabase
-    .from("campaign_recipients")
-    .select("id, organization_id, campaign_id, contact_id, contact_channel_id, campaigns!inner(channel, template_id, status)")
-    .eq("status", "pending")
-    .eq("campaigns.status", "sending")
-    .limit(RECIPIENTS_PER_TICK)
-    .returns<PendingRecipient[]>();
+  const { data: rawRecipientsData, error: recipientsError } = await supabase.rpc("list_pending_recipients", {
+    p_per_campaign: PER_CAMPAIGN_BATCH,
+    p_max_campaigns: MAX_SENDING_CAMPAIGNS_PER_TICK,
+  });
+  const rawRecipients = rawRecipientsData as RawRecipient[] | null;
 
   if (recipientsError) console.error("busca de destinatários pendentes falhou", recipientsError);
 
-  for (const recipient of recipients ?? []) {
-    // Defesa extra além do filtro embutido acima: nunca despachar para uma
-    // campanha que não esteja mesmo em 'sending' (ex.: foi cancelada entre a
-    // consulta e este ponto).
-    if (recipient.campaigns.status !== "sending") continue;
-    await dispatchRecipient(supabase, recipient, summary);
+  const campaignIds = [...new Set((rawRecipients ?? []).map((r) => r.campaign_id))];
+  const campaignsById = new Map<string, CampaignInfo>();
+  if (campaignIds.length > 0) {
+    const { data: campaignsData } = await supabase
+      .from("campaigns")
+      .select("id, channel, template_id, status")
+      .in("id", campaignIds);
+    for (const c of campaignsData ?? []) {
+      campaignsById.set(c.id as string, {
+        channel: c.channel as string,
+        template_id: c.template_id as string | null,
+        status: c.status as string,
+      });
+    }
+  }
+
+  for (const raw of rawRecipients ?? []) {
+    const campaign = campaignsById.get(raw.campaign_id);
+    // Defesa extra: nunca despachar pra uma campanha que não esteja mesmo em
+    // 'sending' (ex.: foi cancelada entre list_pending_recipients e este ponto).
+    if (!campaign || campaign.status !== "sending") continue;
+    await dispatchRecipient(supabase, { ...raw, campaigns: campaign }, summary);
   }
 
   const { data: closedCount, error: closeError } = await supabase.rpc("close_finished_campaigns");
