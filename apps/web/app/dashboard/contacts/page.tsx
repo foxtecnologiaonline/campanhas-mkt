@@ -4,6 +4,7 @@ import { addContact } from "./actions";
 interface ContactRow {
   id: string;
   full_name: string | null;
+  custom_fields: { tags?: string[] } | null;
   contact_channels: { channel: string; external_id: string; opt_in: boolean }[];
 }
 
@@ -11,7 +12,7 @@ export default async function ContactsPage() {
   const supabase = await getUserClient();
   const { data } = await supabase
     .from("contacts")
-    .select("id, full_name, contact_channels(channel, external_id, opt_in)")
+    .select("id, full_name, custom_fields, contact_channels(channel, external_id, opt_in)")
     .order("created_at", { ascending: false })
     .returns<ContactRow[]>();
 
@@ -30,6 +31,10 @@ export default async function ContactsPage() {
           WhatsApp
           <input name="phone" required placeholder="11999999999" />
         </label>
+        <label>
+          Tags (separadas por vírgula)
+          <input name="tags" placeholder="vip, sp" />
+        </label>
         <button type="submit">Adicionar</button>
       </form>
 
@@ -38,6 +43,7 @@ export default async function ContactsPage() {
           <tr>
             <th>Nome</th>
             <th>WhatsApp</th>
+            <th>Tags</th>
             <th>Opt-in</th>
           </tr>
         </thead>
@@ -48,13 +54,14 @@ export default async function ContactsPage() {
               <tr key={contact.id}>
                 <td>{contact.full_name ?? "—"}</td>
                 <td>{whatsapp?.external_id ?? "—"}</td>
+                <td>{(contact.custom_fields?.tags ?? []).join(", ") || "—"}</td>
                 <td>{whatsapp?.opt_in ? "sim" : "não"}</td>
               </tr>
             );
           })}
           {contacts.length === 0 ? (
             <tr>
-              <td colSpan={3}>Nenhum contato ainda.</td>
+              <td colSpan={4}>Nenhum contato ainda.</td>
             </tr>
           ) : null}
         </tbody>

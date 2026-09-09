@@ -13,6 +13,11 @@ interface TemplateOption {
   name: string;
 }
 
+interface SegmentOption {
+  id: string;
+  name: string;
+}
+
 async function getRecipientCounts(
   supabase: Awaited<ReturnType<typeof getUserClient>>,
   campaignId: string,
@@ -35,7 +40,7 @@ async function getRecipientCounts(
 export default async function CampaignsPage() {
   const supabase = await getUserClient();
 
-  const [{ data: campaignsData }, { data: templatesData }] = await Promise.all([
+  const [{ data: campaignsData }, { data: templatesData }, { data: segmentsData }] = await Promise.all([
     supabase
       .from("campaigns")
       .select("id, name, status, scheduled_at")
@@ -46,10 +51,12 @@ export default async function CampaignsPage() {
       .select("id, name")
       .eq("status", "approved")
       .returns<TemplateOption[]>(),
+    supabase.from("segments").select("id, name").returns<SegmentOption[]>(),
   ]);
 
   const campaigns = campaignsData ?? [];
   const templates = templatesData ?? [];
+  const segments = segmentsData ?? [];
 
   const counts = await Promise.all(campaigns.map((c) => getRecipientCounts(supabase, c.id)));
 
@@ -107,10 +114,24 @@ export default async function CampaignsPage() {
             </select>
           </label>
           <label>
+            Segmento (opcional)
+            <select name="segmentId">
+              <option value="">Todo contato com opt-in no WhatsApp</option>
+              {segments.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Agendar para
             <input name="scheduledAt" type="datetime-local" required />
           </label>
-          <p>Envia para todo contato com opt-in no WhatsApp — segmentação por filtro ainda não existe.</p>
+          <p>
+            Sem segmento, envia pra todo contato com opt-in no WhatsApp. Crie segmentos em{" "}
+            <a href="/dashboard/segments">Segmentos</a>.
+          </p>
           <button type="submit">Agendar</button>
         </form>
       )}

@@ -6,9 +6,12 @@ import { signOut } from "./actions";
 const NAV = [
   { href: "/dashboard", label: "Visão geral" },
   { href: "/dashboard/contacts", label: "Contatos" },
+  { href: "/dashboard/segments", label: "Segmentos" },
   { href: "/dashboard/channels", label: "Canais" },
   { href: "/dashboard/templates", label: "Templates" },
   { href: "/dashboard/campaigns", label: "Campanhas" },
+  { href: "/dashboard/inbox", label: "Inbox" },
+  { href: "/dashboard/usage", label: "Uso" },
 ];
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
