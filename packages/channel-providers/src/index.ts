@@ -9,3 +9,4 @@ export type {
 } from "./types";
 
 export { whatsAppCloudProvider } from "./whatsapp-cloud/provider";
+export { whatsAppEvolutionProvider } from "./whatsapp-evolution/provider";

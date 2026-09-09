@@ -1,8 +1,20 @@
-import { whatsAppCloudProvider, type ChannelCredentials } from "@campanhas-mkt/channel-providers";
+import {
+  whatsAppCloudProvider,
+  whatsAppEvolutionProvider,
+  type ChannelCredentials,
+  type ChannelProvider,
+} from "@campanhas-mkt/channel-providers";
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
 
 const CAMPAIGNS_PER_TICK = 5;
 const RECIPIENTS_PER_TICK = 50;
+
+// Único ponto do worker que sabe quais providers existem — adicionar um
+// canal novo (Telegram, SMS...) é registrar aqui, o resto do pipeline não muda.
+const PROVIDERS: Record<string, ChannelProvider> = {
+  whatsapp_cloud: whatsAppCloudProvider,
+  whatsapp_evolution: whatsAppEvolutionProvider,
+};
 
 type ServiceClient = ReturnType<typeof getServiceRoleClient>;
 
@@ -114,7 +126,7 @@ async function dispatchRecipient(
 
   const { data: connection } = await supabase
     .from("channel_connections")
-    .select("id")
+    .select("id, provider")
     .eq("organization_id", recipient.organization_id)
     .eq("channel", recipient.campaigns.channel)
     .eq("status", "active")
@@ -130,16 +142,28 @@ async function dispatchRecipient(
     return;
   }
 
+  const provider = PROVIDERS[connection.provider as string];
+  if (!provider) {
+    await supabase.rpc("record_send_failure", {
+      p_message_id: claim.message_id,
+      p_recipient_id: recipient.id,
+      p_error: `provider "${connection.provider}" sem implementação registrada no worker`,
+    });
+    summary.failed++;
+    return;
+  }
+
   const { data: credentials } = await supabase.rpc("get_channel_credentials", {
     p_connection_id: connection.id,
   });
 
   let templateName: string | undefined;
   let templateLanguage: string | undefined;
+  let text: string | undefined;
   if (recipient.campaigns.template_id) {
     const { data: template } = await supabase
       .from("message_templates")
-      .select("name, language, status")
+      .select("name, language, body, status")
       .eq("id", recipient.campaigns.template_id)
       .maybeSingle();
 
@@ -153,15 +177,24 @@ async function dispatchRecipient(
       return;
     }
 
-    templateName = template.name;
-    templateLanguage = template.language ?? undefined;
+    // A Cloud API exige uma referência a um template pré-aprovado pela Meta;
+    // a Evolution API não tem esse conceito (não é a Cloud API) e só aceita
+    // texto pronto — por isso o corpo do template é renderizado como texto
+    // aqui, em vez de mandar name/language pra frente.
+    if (connection.provider === "whatsapp_cloud") {
+      templateName = template.name;
+      templateLanguage = template.language ?? undefined;
+    } else {
+      text = template.body;
+    }
   }
 
-  const result = await whatsAppCloudProvider.send(credentials as ChannelCredentials, {
+  const result = await provider.send(credentials as ChannelCredentials, {
     to: contactChannel.external_id,
     idempotencyKey: `${recipient.campaign_id}:${recipient.contact_id}`,
     ...(templateName !== undefined ? { templateName } : {}),
     ...(templateLanguage !== undefined ? { templateLanguage } : {}),
+    ...(text !== undefined ? { text } : {}),
   });
 
   if (result.status === "sent") {
