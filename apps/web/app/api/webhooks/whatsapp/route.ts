@@ -1,5 +1,6 @@
-import { whatsAppCloudProvider, type InboundEvent } from "@campanhas-mkt/channel-providers";
+import { whatsAppCloudProvider } from "@campanhas-mkt/channel-providers";
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
+import { processInboundEvent, resolveChannelConnection } from "@/lib/webhooks/inbound-event";
 
 /**
  * GET: handshake de assinatura do webhook exigido pela Meta ao configurar a
@@ -49,116 +50,14 @@ export async function POST(request: Request): Promise<Response> {
   const supabase = getServiceRoleClient();
 
   for (const event of events) {
-    await processEvent(supabase, event);
+    const connection = await resolveChannelConnection(supabase, "whatsapp_cloud", event.externalRef);
+    if (!connection) {
+      console.warn(`webhook whatsapp cloud: nenhuma conexão para phone_number_id=${event.externalRef}`);
+      continue;
+    }
+    await processInboundEvent(supabase, "whatsapp_cloud", connection.organization_id, event);
   }
 
   // A Meta espera 200 rápido; reentrega automaticamente em caso de erro/timeout.
   return new Response("ok", { status: 200 });
-}
-
-async function processEvent(
-  supabase: ReturnType<typeof getServiceRoleClient>,
-  event: InboundEvent,
-): Promise<void> {
-  const { data: connection } = await supabase
-    .from("channel_connections")
-    .select("organization_id")
-    .eq("provider", "whatsapp_cloud")
-    .eq("external_ref", event.externalRef)
-    .maybeSingle();
-
-  if (!connection) {
-    console.warn(`webhook whatsapp: nenhuma conexão para phone_number_id=${event.externalRef}`);
-    return;
-  }
-
-  const organizationId = connection.organization_id as string;
-
-  const { data: inserted } = await supabase
-    .from("webhook_events")
-    .insert({
-      provider: "whatsapp_cloud",
-      provider_event_id: event.providerEventId,
-      organization_id: organizationId,
-      payload: event.raw as object,
-    })
-    .select("id")
-    .maybeSingle();
-
-  if (!inserted) {
-    // Conflito de unicidade (provider, provider_event_id): já processado.
-    return;
-  }
-
-  if (event.type === "status" && event.providerMessageId && event.status) {
-    await supabase
-      .from("messages")
-      .update({ status: event.status })
-      .eq("organization_id", organizationId)
-      .eq("provider_message_id", event.providerMessageId);
-    return;
-  }
-
-  if (event.type === "message" && event.contactExternalId) {
-    await recordInboundMessage(supabase, organizationId, event);
-  }
-}
-
-async function recordInboundMessage(
-  supabase: ReturnType<typeof getServiceRoleClient>,
-  organizationId: string,
-  event: InboundEvent,
-): Promise<void> {
-  const externalId = event.contactExternalId as string;
-
-  let { data: contactChannel } = await supabase
-    .from("contact_channels")
-    .select("id, contact_id")
-    .eq("organization_id", organizationId)
-    .eq("channel", "whatsapp")
-    .eq("external_id", externalId)
-    .maybeSingle();
-
-  if (!contactChannel) {
-    const { data: contact } = await supabase
-      .from("contacts")
-      .insert({ organization_id: organizationId })
-      .select("id")
-      .single();
-
-    const { data: newChannel } = await supabase
-      .from("contact_channels")
-      .insert({
-        organization_id: organizationId,
-        contact_id: contact!.id,
-        channel: "whatsapp",
-        external_id: externalId,
-      })
-      .select("id, contact_id")
-      .single();
-
-    contactChannel = newChannel;
-  }
-
-  if (!contactChannel) return;
-
-  await supabase.from("conversations").upsert(
-    {
-      organization_id: organizationId,
-      contact_id: contactChannel.contact_id,
-      channel: "whatsapp",
-      last_message_at: (event.occurredAt ?? new Date()).toISOString(),
-    },
-    { onConflict: "organization_id,contact_id,channel" },
-  );
-
-  await supabase.from("messages").insert({
-    organization_id: organizationId,
-    contact_id: contactChannel.contact_id,
-    channel: "whatsapp",
-    direction: "inbound",
-    provider_message_id: event.providerMessageId,
-    status: "delivered",
-    body: event.text,
-  });
 }
