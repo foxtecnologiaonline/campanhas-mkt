@@ -10,7 +10,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@campanhas-mkt/channel-providers':
+      '@mensageria/channel-providers':
         specifier: workspace:*
         version: link:../../packages/channel-providers
       '@supabase/ssr':

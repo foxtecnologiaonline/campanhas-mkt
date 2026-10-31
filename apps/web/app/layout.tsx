@@ -5,7 +5,7 @@ const archivo = Archivo({ subsets: ["latin"], weight: ["600", "700", "800"], var
 const plexSans = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-body" });
 
 export const metadata = {
-  title: "Campanhas Mkt",
+  title: "MensagerIA",
   description: "Plataforma de campanhas multicanal — v1.0 WhatsApp",
 };
 

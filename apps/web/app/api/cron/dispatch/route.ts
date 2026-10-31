@@ -3,7 +3,7 @@ import {
   whatsAppEvolutionProvider,
   type ChannelCredentials,
   type ChannelProvider,
-} from "@campanhas-mkt/channel-providers";
+} from "@mensageria/channel-providers";
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
 
 const CAMPAIGNS_PER_TICK = 5;

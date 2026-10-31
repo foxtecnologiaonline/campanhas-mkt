@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { submitWhatsAppCloudTemplate, type ChannelCredentials } from "@campanhas-mkt/channel-providers";
+import { submitWhatsAppCloudTemplate, type ChannelCredentials } from "@mensageria/channel-providers";
 import { getCurrentOrg } from "@/lib/org";
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
 import { getUserClient } from "@/lib/supabase/server-client";

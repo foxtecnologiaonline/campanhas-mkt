@@ -1,5 +1,5 @@
 {
-  "name": "@campanhas-mkt/channel-providers",
+  "name": "@mensageria/channel-providers",
   "version": "0.1.0",
   "private": true,
   "type": "module",

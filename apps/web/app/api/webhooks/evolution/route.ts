@@ -1,4 +1,4 @@
-import { whatsAppEvolutionProvider } from "@campanhas-mkt/channel-providers";
+import { whatsAppEvolutionProvider } from "@mensageria/channel-providers";
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
 import { processInboundEvent, resolveChannelConnection } from "@/lib/webhooks/inbound-event";
 

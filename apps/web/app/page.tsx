@@ -66,7 +66,7 @@ export default function HomePage() {
     <div className={styles.page}>
       <nav className={styles.nav}>
         <div className={styles.navInner}>
-          <span className={styles.logo}>Campanhas Mkt</span>
+          <span className={styles.logo}>MensagerIA</span>
           <a className={styles.navCta} href="/login">
             Entrar
           </a>

@@ -1,5 +1,5 @@
 {
-  "name": "@campanhas-mkt/web",
+  "name": "@mensageria/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@campanhas-mkt/channel-providers": "workspace:*",
+    "@mensageria/channel-providers": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "next": "^15.0.3",

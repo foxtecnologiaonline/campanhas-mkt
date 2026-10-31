@@ -1,4 +1,4 @@
-import type { ChannelCredentials, ChannelProvider, InboundEvent } from "@campanhas-mkt/channel-providers";
+import type { ChannelCredentials, ChannelProvider, InboundEvent } from "@mensageria/channel-providers";
 import { getServiceRoleClient } from "@/lib/supabase/service-client";
 
 type ServiceClient = ReturnType<typeof getServiceRoleClient>;
